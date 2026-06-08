@@ -34,7 +34,7 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
 
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${finalGeminiApiKey}`;
       
-      console.log('Analyzing receipt with Gemini API');
+      console.log('🔍 Analyzing receipt with Gemini');
       const response = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -51,30 +51,17 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
             ]
           }],
           generationConfig: {
-            temperature: 1,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 1024,
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: "object",
-              properties: {
-                amount: { type: "number" },
-                description: { type: "string" },
-                category: { type: "string" },
-                items: { type: "array", items: { type: "string" } }
-              },
-              required: ["amount", "description", "category"]
-            }
+            temperature: 1.0,
+            responseMimeType: "application/json"
           }
         })
       });
 
-      console.log('Gemini Response Status:', response.status);
+      console.log('✓ Gemini Receipt Response Status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Gemini API Error:', response.status, errorText);
+        console.error('❌ Gemini API Error:', response.status, errorText);
         return NextResponse.json({ 
           amount: 0,
           description: 'Receipt analysis failed',
@@ -86,8 +73,10 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
         const resData = await response.json();
         const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
         
-        if (!rawText) {
-          console.error('Empty response from Gemini');
+        console.log('📝 Raw text length:', rawText.length);
+        
+        if (!rawText || rawText.length === 0) {
+          console.error('❌ Empty response from Gemini');
           return NextResponse.json({ 
             amount: 0,
             description: 'Unable to read receipt',
@@ -95,8 +84,11 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
           });
         }
 
-        const cleanText = rawText.replace(/```json/gi, '').replace(/```/g, '').replace(/^\s+|\s+$/g, '');
+        const cleanText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        console.log('🔧 Cleaned text:', cleanText.substring(0, 150));
+        
         const parsed = JSON.parse(cleanText);
+        console.log('✓ Successfully parsed receipt');
 
         const storeName = parsed.description || 'Belanja Struk';
         const itemsList = Array.isArray(parsed.items) && parsed.items.length > 0
@@ -110,7 +102,7 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
           category: parsed.category || 'Lainnya'
         });
       } catch (parseError: any) {
-        console.error('JSON Parse Error in scan-receipt:', parseError.message);
+        console.error('❌ JSON Parse Error in scan-receipt:', parseError.message);
         return NextResponse.json({ 
           amount: 0,
           description: 'Receipt format not recognized',
@@ -175,7 +167,9 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
 
     return NextResponse.json({ error: 'No API configuration provided' }, { status: 400 });
   } catch (error: any) {
-    console.error('Scan API Error:', error.message);
+    console.error('❌ Scan API Outer Error:', error.message || error);
+    console.error('Stack trace:', error.stack);
+    
     return NextResponse.json({ 
       amount: 0,
       description: 'Error processing receipt. Please try again.',

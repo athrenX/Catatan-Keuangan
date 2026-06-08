@@ -47,7 +47,7 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${finalGeminiApiKey}`;
     
-    console.log('Sending request to Gemini API');
+    console.log('🔍 Sending request to Gemini Financial Advisor');
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -56,28 +56,17 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
           parts: [{ text: prompt }]
         }],
         generationConfig: {
-          temperature: 1,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 8192,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "object",
-            properties: {
-              score: { type: "number" },
-              summary: { type: "string" },
-              tips: { type: "array", items: { type: "string" } }
-            }
-          }
+          temperature: 1.0,
+          responseMimeType: "application/json"
         }
       })
     });
 
-    console.log('Gemini API Response Status:', response.status);
+    console.log('✓ Gemini API Response Status:', response.status);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Gemini API Error:', response.status, errorText);
+      console.error('❌ Gemini API Error:', response.status, errorText);
       
       const defaultResponse = {
         score: 65,
@@ -92,12 +81,13 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
     }
 
     const resData = await response.json();
-    console.log('Gemini API Raw Response:', JSON.stringify(resData).substring(0, 500));
+    console.log('✓ Got response data, extracting text...');
     
     const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    console.log('📝 Raw text length:', rawText.length, 'First 200 chars:', rawText.substring(0, 200));
     
-    if (!rawText) {
-      console.error('Empty response from Gemini API. Full response:', resData);
+    if (!rawText || rawText.length === 0) {
+      console.error('❌ Empty response from Gemini API');
       const defaultResponse = {
         score: 75,
         summary: "Analisis keuangan Anda memerlukan data transaksi yang lebih lengkap untuk memberikan rekomendasi yang akurat.",
@@ -111,19 +101,26 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
     }
 
     try {
-      const cleanText = rawText.replace(/```json/gi, '').replace(/```/g, '').replace(/^\s+|\s+$/g, '');
-      console.log('Cleaned text:', cleanText.substring(0, 200));
-      const parsed = JSON.parse(cleanText);
+      // Try to parse directly first
+      let parsed;
+      const cleanText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       
-      // Validate parsed response
+      console.log('🔧 Cleaning and parsing JSON...');
+      console.log('Cleaned text first 150 chars:', cleanText.substring(0, 150));
+      
+      parsed = JSON.parse(cleanText);
+      console.log('✓ Successfully parsed JSON');
+      
+      // Validate structure
       if (!parsed.score || !parsed.summary || !Array.isArray(parsed.tips)) {
-        throw new Error('Invalid response structure');
+        throw new Error('Missing required fields in response');
       }
       
+      console.log('✓ Response validated, returning:', { score: parsed.score });
       return NextResponse.json(parsed);
     } catch (parseError: any) {
-      console.error('JSON Parse Error:', parseError.message);
-      console.error('Raw text:', rawText);
+      console.error('❌ JSON Parse Error:', parseError.message);
+      console.error('Raw text that failed to parse:', rawText.substring(0, 500));
       
       const defaultResponse = {
         score: 70,
@@ -134,12 +131,23 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
           "Monitor pengeluaran secara berkala untuk melihat progress"
         ]
       };
+      console.log('↩️ Returning default response due to parse error');
       return NextResponse.json(defaultResponse);
     }
   } catch (error: any) {
-    console.error('Advisor API Error:', error);
-    return NextResponse.json({ 
-      error: 'Unable to get financial advice. Please try again later.' 
-    }, { status: 500 });
+    console.error('❌ Advisor API Outer Error:', error.message || error);
+    console.error('Stack trace:', error.stack);
+    
+    const fallbackResponse = {
+      score: 60,
+      summary: "Saat ini kami mengalami kesulitan menganalisis data keuangan Anda. Silakan coba lagi nanti.",
+      tips: [
+        "Catat semua pengeluaran Anda secara teratur",
+        "Buat kategori pengeluaran yang jelas dan terukur",
+        "Tentukan target tabungan yang realistis"
+      ]
+    };
+    
+    return NextResponse.json(fallbackResponse);
   }
 }
