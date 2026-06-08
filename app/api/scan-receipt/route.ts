@@ -32,8 +32,9 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
   "items": ["Pop Mie", "Ciki", "Beras"]
 }`;
 
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${finalGeminiApiKey}`;
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${finalGeminiApiKey}`;
       
+      console.log('Analyzing receipt with Gemini API');
       const response = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -50,33 +51,72 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
             ]
           }],
           generationConfig: {
-            responseMimeType: "application/json"
+            temperature: 1,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 1024,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "object",
+              properties: {
+                amount: { type: "number" },
+                description: { type: "string" },
+                category: { type: "string" },
+                items: { type: "array", items: { type: "string" } }
+              },
+              required: ["amount", "description", "category"]
+            }
           }
         })
       });
 
+      console.log('Gemini Response Status:', response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
-        return NextResponse.json({ error: `Gemini API Error: ${errorText}` }, { status: response.status });
+        console.error('Gemini API Error:', response.status, errorText);
+        return NextResponse.json({ 
+          amount: 0,
+          description: 'Receipt analysis failed',
+          category: 'Lainnya'
+        });
       }
 
-      const resData = await response.json();
-      const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const cleanText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleanText);
+      try {
+        const resData = await response.json();
+        const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        if (!rawText) {
+          console.error('Empty response from Gemini');
+          return NextResponse.json({ 
+            amount: 0,
+            description: 'Unable to read receipt',
+            category: 'Lainnya'
+          });
+        }
 
-      const storeName = parsed.description || 'Belanja Struk';
-      const itemsList = Array.isArray(parsed.items) && parsed.items.length > 0
-        ? ` (Detail: ${parsed.items.join(', ')})`
-        : '';
-      const finalDescription = `${storeName}${itemsList}`;
+        const cleanText = rawText.replace(/```json/gi, '').replace(/```/g, '').replace(/^\s+|\s+$/g, '');
+        const parsed = JSON.parse(cleanText);
 
-      return NextResponse.json({
-        amount: Number(parsed.amount) || 0,
-        description: finalDescription,
-        category: parsed.category || 'Lainnya'
-      });
-    }
+        const storeName = parsed.description || 'Belanja Struk';
+        const itemsList = Array.isArray(parsed.items) && parsed.items.length > 0
+          ? ` (Detail: ${parsed.items.join(', ')})`
+          : '';
+        const finalDescription = `${storeName}${itemsList}`;
+
+        return NextResponse.json({
+          amount: Number(parsed.amount) || 0,
+          description: finalDescription,
+          category: parsed.category || 'Lainnya'
+        });
+      } catch (parseError: any) {
+        console.error('JSON Parse Error in scan-receipt:', parseError.message);
+        return NextResponse.json({ 
+          amount: 0,
+          description: 'Receipt format not recognized',
+          category: 'Lainnya'
+        });
+      }
 
     // 2. If Veryfi is configured, use Veryfi
     if (veryfiClientId && veryfiUsername && veryfiApiKey) {
@@ -134,7 +174,11 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
 
     return NextResponse.json({ error: 'No API configuration provided' }, { status: 400 });
   } catch (error: any) {
-    console.error('Scan API Error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    console.error('Scan API Error:', error.message);
+    return NextResponse.json({ 
+      amount: 0,
+      description: 'Error processing receipt. Please try again.',
+      category: 'Lainnya'
+    }, { status: 500 });
   }
 }
