@@ -63,6 +63,11 @@ JANGAN tambahkan markdown code blocks atau teks apapun. HANYA JSON object di ata
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${finalGeminiApiKey}`;
     
     console.log('🔍 Sending request to Gemini Financial Advisor');
+    
+    // Create AbortController with timeout (30 seconds)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -74,18 +79,19 @@ JANGAN tambahkan markdown code blocks atau teks apapun. HANYA JSON object di ata
           temperature: 1.0,
           responseMimeType: "application/json"
         }
-      })
-    });
+      }),
+      signal: controller.signal
+    }).finally(() => clearTimeout(timeout));
 
     console.log('✓ Gemini API Response Status:', response.status);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Gemini API Error:', response.status, errorText);
+      console.error('❌ Gemini API Error:', response.status, errorText.substring(0, 200));
       
       const defaultResponse = {
         score: 65,
-        summary: "Penilaian keuangan sedang diproses. Silakan coba beberapa saat lagi.",
+        summary: "Layanan analisis sedang diperbarui. Silakan coba beberapa saat lagi.",
         tips: [
           "Pantau pengeluaran harian Anda dengan cermat",
           "Tentukan budget untuk setiap kategori pengeluaran",
@@ -156,7 +162,21 @@ JANGAN tambahkan markdown code blocks atau teks apapun. HANYA JSON object di ata
       return NextResponse.json(defaultResponse);
     }
   } catch (error: any) {
-    console.error('❌ Advisor API Outer Error:', error.message || error);
+    console.error('❌ Advisor API Error:', error.message || error);
+    
+    // Handle timeout/abort errors
+    if (error.name === 'AbortError' || error.message?.includes('timeout')) {
+      console.error('❌ Request timeout - Gemini API terlalu lama');
+      return NextResponse.json({
+        score: 60,
+        summary: "Analisis sedang diproses. Sistem kami sedang sibuk. Silakan coba lagi dalam beberapa detik.",
+        tips: [
+          "Catat pengeluaran Anda setiap hari secara konsisten",
+          "Analisis pola pengeluaran untuk menemukan area penghematan",
+          "Tetapkan target tabungan yang SMART (Specific, Measurable, Achievable, Realistic, Time-bound)"
+        ]
+      });
+    }
     
     // Handle payload too large error
     if (error.message?.includes('PayloadTooLargeError') || error.status === 413) {
