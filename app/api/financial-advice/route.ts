@@ -62,17 +62,48 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
 
     if (!response.ok) {
       const errorText = await response.text();
-      return NextResponse.json({ error: `Gemini API Error: ${errorText}` }, { status: response.status });
+      console.error('Gemini API Error:', response.status, errorText);
+      return NextResponse.json({ error: `Gemini API Error: ${response.status}` }, { status: response.status });
     }
 
     const resData = await response.json();
     const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const cleanText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(cleanText);
+    
+    if (!rawText) {
+      console.error('Empty response from Gemini API');
+      const defaultResponse = {
+        score: 75,
+        summary: "Analisis keuangan Anda memerlukan data transaksi yang lebih lengkap untuk memberikan rekomendasi yang akurat.",
+        tips: [
+          "Mulai dengan mencatat semua pengeluaran harian Anda",
+          "Kelompokkan pengeluaran berdasarkan kategori untuk melihat pola belanja",
+          "Tentukan target budget bulanan untuk setiap kategori pengeluaran"
+        ]
+      };
+      return NextResponse.json(defaultResponse);
+    }
 
-    return NextResponse.json(parsed);
+    try {
+      const cleanText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanText);
+      return NextResponse.json(parsed);
+    } catch (parseError: any) {
+      console.error('JSON Parse Error:', parseError.message, 'Raw text:', rawText);
+      const defaultResponse = {
+        score: 70,
+        summary: "Kesehatan finansial Anda berada dalam kondisi menengah. Diperlukan penyesuaian dalam pengelolaan anggaran.",
+        tips: [
+          "Kurangi pengeluaran di kategori dengan nilai tertinggi",
+          "Buat rencana tabungan yang realistis dan terukur",
+          "Monitor pengeluaran secara berkala untuk melihat progress"
+        ]
+      };
+      return NextResponse.json(defaultResponse);
+    }
   } catch (error: any) {
     console.error('Advisor API Error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Unable to get financial advice. Please try again later.' 
+    }, { status: 500 });
   }
 }
