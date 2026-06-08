@@ -45,7 +45,7 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
   ]
 }`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${finalGeminiApiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${finalGeminiApiKey}`;
     
     console.log('Sending request to Gemini API');
     const response = await fetch(geminiUrl, {

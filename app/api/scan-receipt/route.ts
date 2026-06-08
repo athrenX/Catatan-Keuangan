@@ -32,7 +32,7 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
   "items": ["Pop Mie", "Ciki", "Beras"]
 }`;
 
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${finalGeminiApiKey}`;
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${finalGeminiApiKey}`;
       
       console.log('Analyzing receipt with Gemini API');
       const response = await fetch(geminiUrl, {
