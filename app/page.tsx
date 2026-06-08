@@ -413,6 +413,13 @@ export default function FinanceTracker() {
       setTheme(savedTheme);
     }
 
+    // Clear receipt image cache to free up localStorage (quota exceeded issue)
+    try {
+      clearReceiptImageCache();
+    } catch (e) {
+      console.warn('⚠️ Could not clear receipt cache:', e);
+    }
+
     const savedVeryfiClientId = localStorage.getItem('veryfi_client_id') || '';
     const savedVeryfiUsername = localStorage.getItem('veryfi_username') || '';
     const savedVeryfiApiKey = localStorage.getItem('veryfi_api_key') || '';
@@ -523,26 +530,65 @@ export default function FinanceTracker() {
 
   const fetchTransactions = async (userId: string, userEmail?: string) => {
     try {
+      // Select only needed columns to avoid bandwidth and timeout issues
       const { data, error } = await supabase
         .from('transactions')
-        .select('*')
+        .select('id, type, amount, description, category, date, user_id')
         .eq('user_id', userId)
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .limit(100); // Limit to recent 100 transactions to reduce load
 
-      if (error) throw error;
-      if (data) {
-        const enriched = data.map((t: any) => ({
-          ...t,
-          receiptImage: localStorage.getItem(`receipt_image_${t.id}`) || undefined
-        }));
-        setTransactions(enriched);
+      if (error) {
+        console.error('⚠️ Supabase fetch error:', error.message);
+        throw error;
+      }
+
+      if (data && data.length > 0) {
+        // Don't load receipt images in initial fetch - just transaction data
+        setTransactions(data);
         if (userEmail) {
-          localStorage.setItem(`transactions_${userEmail}`, JSON.stringify(enriched));
+          try {
+            localStorage.setItem(`transactions_${userEmail}`, JSON.stringify(data));
+          } catch (e) {
+            console.warn('⚠️ Could not save to localStorage (quota may be full)');
+          }
         }
+      } else {
+        console.log('ℹ️ No transactions found');
+        setTransactions([]);
       }
     } catch (err) {
-      console.error('Error fetching transactions:', err);
+      console.error('❌ Error fetching transactions:', err);
+      // Fallback: try to load from localStorage
+      if (userEmail) {
+        try {
+          const cached = localStorage.getItem(`transactions_${userEmail}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            console.log('↩️ Loaded transactions from localStorage cache:', parsed.length, 'items');
+            setTransactions(parsed);
+            return;
+          }
+        } catch (e) {
+          console.warn('⚠️ Could not load from localStorage');
+        }
+      }
+      // Empty transactions on error (don't leave page blank)
+      setTransactions([]);
     }
+  };
+
+  const clearReceiptImageCache = () => {
+    // Remove receipt images to free up localStorage space (quota exceeded)
+    const keys = Object.keys(localStorage);
+    let cleared = 0;
+    keys.forEach(key => {
+      if (key.startsWith('receipt_image_')) {
+        localStorage.removeItem(key);
+        cleared++;
+      }
+    });
+    console.log(`🗑️ Cleared ${cleared} receipt image cache entries`);
   };
 
   const loadBudget = (userId: string) => {
