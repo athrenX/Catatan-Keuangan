@@ -117,6 +117,7 @@ Return ONLY a JSON object in this exact format, with no markdown code blocks:
           category: 'Lainnya'
         });
       }
+    }
 
     // 2. If Veryfi is configured, use Veryfi
     if (veryfiClientId && veryfiUsername && veryfiApiKey) {
