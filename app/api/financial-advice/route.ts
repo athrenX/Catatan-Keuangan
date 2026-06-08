@@ -45,8 +45,9 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
   ]
 }`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${finalGeminiApiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${finalGeminiApiKey}`;
     
+    console.log('Sending request to Gemini API');
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -55,22 +56,48 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
           parts: [{ text: prompt }]
         }],
         generationConfig: {
-          responseMimeType: "application/json"
+          temperature: 1,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              score: { type: "number" },
+              summary: { type: "string" },
+              tips: { type: "array", items: { type: "string" } }
+            }
+          }
         }
       })
     });
 
+    console.log('Gemini API Response Status:', response.status);
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Gemini API Error:', response.status, errorText);
-      return NextResponse.json({ error: `Gemini API Error: ${response.status}` }, { status: response.status });
+      
+      const defaultResponse = {
+        score: 65,
+        summary: "Penilaian keuangan sedang diproses. Silakan coba beberapa saat lagi.",
+        tips: [
+          "Pantau pengeluaran harian Anda dengan cermat",
+          "Tentukan budget untuk setiap kategori pengeluaran",
+          "Mulai kebiasaan menabung minimal 10% dari penghasilan"
+        ]
+      };
+      return NextResponse.json(defaultResponse);
     }
 
     const resData = await response.json();
+    console.log('Gemini API Raw Response:', JSON.stringify(resData).substring(0, 500));
+    
     const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
     if (!rawText) {
-      console.error('Empty response from Gemini API');
+      console.error('Empty response from Gemini API. Full response:', resData);
       const defaultResponse = {
         score: 75,
         summary: "Analisis keuangan Anda memerlukan data transaksi yang lebih lengkap untuk memberikan rekomendasi yang akurat.",
@@ -84,11 +111,20 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
     }
 
     try {
-      const cleanText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const cleanText = rawText.replace(/```json/gi, '').replace(/```/g, '').replace(/^\s+|\s+$/g, '');
+      console.log('Cleaned text:', cleanText.substring(0, 200));
       const parsed = JSON.parse(cleanText);
+      
+      // Validate parsed response
+      if (!parsed.score || !parsed.summary || !Array.isArray(parsed.tips)) {
+        throw new Error('Invalid response structure');
+      }
+      
       return NextResponse.json(parsed);
     } catch (parseError: any) {
-      console.error('JSON Parse Error:', parseError.message, 'Raw text:', rawText);
+      console.error('JSON Parse Error:', parseError.message);
+      console.error('Raw text:', rawText);
+      
       const defaultResponse = {
         score: 70,
         summary: "Kesehatan finansial Anda berada dalam kondisi menengah. Diperlukan penyesuaian dalam pengelolaan anggaran.",
