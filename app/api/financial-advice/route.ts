@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { 
+    let { 
       transactions = [], 
       budgetLimit = 5000000, 
       totalIncome = 0, 
@@ -11,11 +11,27 @@ export async function POST(req: Request) {
       geminiApiKey 
     } = body;
 
+    console.log('📥 Financial Advice Request - Transactions count:', transactions.length);
+
+    // LIMIT transactions to max 30 to avoid payload size issues
+    if (transactions.length > 30) {
+      console.log('⚠️ Limiting transactions from', transactions.length, 'to 30');
+      transactions = transactions.slice(0, 30);
+    }
+
     const finalGeminiApiKey = geminiApiKey || process.env.GEMINI_API_KEY;
 
     if (!finalGeminiApiKey) {
       return NextResponse.json({ error: 'Gemini API Key is not configured. Set GEMINI_API_KEY environment variable.' }, { status: 400 });
     }
+
+    // Create compact transaction list to reduce payload
+    const compactTransactions = transactions.map((t: any) => ({
+      d: t.date,
+      c: t.category,
+      a: t.amount,
+      desc: t.description?.substring(0, 50) || '' // Limit description length
+    }));
 
     const prompt = `Anda adalah penasihat keuangan (financial coach) profesional berbahasa Indonesia yang cerdas dan ramah. Analisis data transaksi keuangan pengguna berikut untuk memberikan evaluasi kesehatan finansial dan tips praktis.
 
@@ -23,15 +39,10 @@ Ringkasan Keuangan:
 - Batas Anggaran (Budget Limit): Rp ${budgetLimit}
 - Total Pemasukan Bulan Ini: Rp ${totalIncome}
 - Total Pengeluaran Bulan Ini: Rp ${totalExpense}
+- Total Transaksi: ${transactions.length} items
 
-Daftar Transaksi Lengkap:
-${JSON.stringify(transactions.map((t: any) => ({
-      date: t.date,
-      type: t.type,
-      amount: t.amount,
-      description: t.description,
-      category: t.category
-    })))}
+Daftar Transaksi Terbaru (max 30):
+${JSON.stringify(compactTransactions)}
 
 **PENTING: Tolong berikan evaluasi yang membangun dalam format JSON MURNI (bukan Markdown). Nilai kesehatan keuangan (score) harus realistis berkisar 0-100 berdasarkan rasio pengeluaran terhadap pemasukan serta kepatuhan anggaran.
 
@@ -86,10 +97,9 @@ JANGAN tambahkan markdown code blocks atau teks apapun. HANYA JSON object di ata
 
     const resData = await response.json();
     console.log('✓ Got response data, extracting text...');
-    console.log('Full response structure:', JSON.stringify(resData, null, 2).substring(0, 1000));
     
     const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log('📝 Raw text length:', rawText.length, 'First 500 chars:', rawText.substring(0, 500));
+    console.log('📝 Raw text length:', rawText.length);
     
     if (!rawText || rawText.length === 0) {
       console.error('❌ Empty response from Gemini API');
@@ -147,7 +157,14 @@ JANGAN tambahkan markdown code blocks atau teks apapun. HANYA JSON object di ata
     }
   } catch (error: any) {
     console.error('❌ Advisor API Outer Error:', error.message || error);
-    console.error('Stack trace:', error.stack);
+    
+    // Handle payload too large error
+    if (error.message?.includes('PayloadTooLargeError') || error.status === 413) {
+      console.error('❌ Payload too large - reduce number of transactions');
+      return NextResponse.json({ 
+        error: 'Request data terlalu besar. Kurangi jumlah transaksi untuk dianalisis.'
+      }, { status: 413 });
+    }
     
     const fallbackResponse = {
       score: 60,
