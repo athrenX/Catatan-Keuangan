@@ -33,8 +33,10 @@ ${JSON.stringify(transactions.map((t: any) => ({
       category: t.category
     })))}
 
-Tolong berikan evaluasi yang membangun. Nilai kesehatan keuangan (score) harus realistis berkisar 0-100 berdasarkan rasio pengeluaran terhadap pemasukan serta kepatuhan anggaran.
-Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah ini, tanpa menggunakan blok kode markdown (\`\`\`json):
+**PENTING: Tolong berikan evaluasi yang membangun dalam format JSON MURNI (bukan Markdown). Nilai kesehatan keuangan (score) harus realistis berkisar 0-100 berdasarkan rasio pengeluaran terhadap pemasukan serta kepatuhan anggaran.
+
+Berikan HANYA JSON object berikut, tanpa teks tambahan, tanpa markdown backticks, tanpa penjelasan apapun:
+
 {
   "score": 75,
   "summary": "Penjelasan singkat mengenai situasi keuangan pengguna saat ini, kebiasaan belanja mereka, dan apakah mereka melampaui anggaran.",
@@ -43,7 +45,9 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
     "Tips praktis kedua yang spesifik berdasarkan kategori belanja terbesar mereka.",
     "Tips praktis ketiga tentang investasi atau pengelolaan dana darurat."
   ]
-}`;
+}
+
+JANGAN tambahkan markdown code blocks atau teks apapun. HANYA JSON object di atas.`;
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${finalGeminiApiKey}`;
     
@@ -82,9 +86,10 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
 
     const resData = await response.json();
     console.log('✓ Got response data, extracting text...');
+    console.log('Full response structure:', JSON.stringify(resData, null, 2).substring(0, 1000));
     
     const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log('📝 Raw text length:', rawText.length, 'First 200 chars:', rawText.substring(0, 200));
+    console.log('📝 Raw text length:', rawText.length, 'First 500 chars:', rawText.substring(0, 500));
     
     if (!rawText || rawText.length === 0) {
       console.error('❌ Empty response from Gemini API');
@@ -106,7 +111,13 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
       const cleanText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       
       console.log('🔧 Cleaning and parsing JSON...');
-      console.log('Cleaned text first 150 chars:', cleanText.substring(0, 150));
+      console.log('Cleaned text first 300 chars:', cleanText.substring(0, 300));
+      
+      // Check if it looks like JSON
+      if (!cleanText.startsWith('{')) {
+        console.error('❌ Response does not start with {, it starts with:', cleanText.substring(0, 50));
+        throw new Error('Response is not valid JSON format');
+      }
       
       parsed = JSON.parse(cleanText);
       console.log('✓ Successfully parsed JSON');
@@ -120,7 +131,7 @@ Berikan respons dalam JSON objek murni dengan struktur persis seperti di bawah i
       return NextResponse.json(parsed);
     } catch (parseError: any) {
       console.error('❌ JSON Parse Error:', parseError.message);
-      console.error('Raw text that failed to parse:', rawText.substring(0, 500));
+      console.error('Raw text that failed to parse (first 800 chars):', rawText.substring(0, 800));
       
       const defaultResponse = {
         score: 70,
